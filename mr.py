@@ -31,6 +31,20 @@ class StorageEngine:
             if key in self.expires:
                 del self.expires[key]
             return "OK"
+        elif cmd == "SETEX":
+            if len(parts) < 4:
+                return "ERR syntax error: SETEX key seconds value"
+            key = parts[1]
+            try:
+                seconds = int(parts[2])
+                if seconds <= 0:
+                    return "ERR invalid expire time in setex"
+                val = " ".join(parts[3:])
+                self.storage[key] = val
+                self.expires[key] = time.time() + seconds
+                return "OK"
+            except ValueError:
+                return "ERR value is not an integer or out of range"
         elif cmd == "GET":
             if len(parts) < 2:
                 return "ERR syntax error: GET key"
@@ -128,6 +142,7 @@ class StorageEngine:
         elif cmd == "HELP":
             commands = [
                 "SET key value - Store string value",
+                "SETEX key seconds value - Store string value with expiration",
                 "GET key - Retrieve value by key",
                 "DEL key - Delete a key",
                 "EXISTS key - Check if key exists",
