@@ -65,7 +65,11 @@ class StorageEngine:
                 key = parts[1]
                 if self._check_expired(key):
                     return "(nil)"
-                return self.storage.get(key, "(nil)")
+                if key not in self.storage:
+                    return "(nil)"
+                if not isinstance(self.storage[key], str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return self.storage[key]
             elif cmd == "DEL":
                 if len(parts) < 2:
                     return "ERR syntax error: DEL key"
@@ -128,6 +132,8 @@ class StorageEngine:
                 key = parts[1]
                 self._check_expired(key)
                 current = self.storage.get(key, "0")
+                if not isinstance(current, str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 try:
                     val = int(current) + 1
                     self.storage[key] = str(val)
@@ -140,12 +146,64 @@ class StorageEngine:
                 key = parts[1]
                 self._check_expired(key)
                 current = self.storage.get(key, "0")
+                if not isinstance(current, str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 try:
                     val = int(current) - 1
                     self.storage[key] = str(val)
                     return f"(integer) {val}"
                 except ValueError:
                     return "ERR value is not an integer or out of range"
+            elif cmd == "LPUSH":
+                if len(parts) < 3:
+                    return "ERR syntax error: LPUSH key value [value ...]"
+                key = parts[1]
+                self._check_expired(key)
+                if key in self.storage and not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                if key not in self.storage:
+                    self.storage[key] = []
+                for val in parts[2:]:
+                    self.storage[key].insert(0, val)
+                return f"(integer) {len(self.storage[key])}"
+            elif cmd == "RPUSH":
+                if len(parts) < 3:
+                    return "ERR syntax error: RPUSH key value [value ...]"
+                key = parts[1]
+                self._check_expired(key)
+                if key in self.storage and not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                if key not in self.storage:
+                    self.storage[key] = []
+                for val in parts[2:]:
+                    self.storage[key].append(val)
+                return f"(integer) {len(self.storage[key])}"
+            elif cmd == "LRANGE":
+                if len(parts) < 4:
+                    return "ERR syntax error: LRANGE key start stop"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(empty list or set)"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    start = int(parts[2])
+                    stop = int(parts[3])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                lst = self.storage[key]
+                n = len(lst)
+                if start < 0:
+                    start = max(0, n + start)
+                if stop < 0:
+                    stop = n + stop
+                if start > stop or start >= n:
+                    return "(empty list or set)"
+                stop = min(stop, n - 1)
+                sub = lst[start:stop + 1]
+                if not sub:
+                    return "(empty list or set)"
+                return "\n".join(f"{i+1}) \"{item}\"" for i, item in enumerate(sub))
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
@@ -162,6 +220,9 @@ class StorageEngine:
                     "TTL key - Get remaining time to live",
                     "INCR key - Increment integer value",
                     "DECR key - Decrement integer value",
+                    "LPUSH key value... - Insert elements at head of list",
+                    "RPUSH key value... - Append elements to tail of list",
+                    "LRANGE key start stop - Get range of elements from list",
                     "FLUSHALL - Clear all stored data",
                     "HELP - Show manual",
                     "QUIT - Exit server"
