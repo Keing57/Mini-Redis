@@ -304,6 +304,68 @@ class StorageEngine:
                     res.append(f"{idx+1}) \"{v}\"")
                     idx += 2
                 return "\n".join(res)
+            elif cmd == "SADD":
+                if len(parts) < 3:
+                    return "ERR syntax error: SADD key member [member ...]"
+                key = parts[1]
+                self._check_expired(key)
+                if key in self.storage and not isinstance(self.storage[key], set):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                if key not in self.storage:
+                    self.storage[key] = set()
+                added = 0
+                for member in parts[2:]:
+                    if member not in self.storage[key]:
+                        self.storage[key].add(member)
+                        added += 1
+                return f"(integer) {added}"
+            elif cmd == "SMEMBERS":
+                if len(parts) < 2:
+                    return "ERR syntax error: SMEMBERS key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(empty list or set)"
+                if not isinstance(self.storage[key], set):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                members = list(self.storage[key])
+                if not members:
+                    return "(empty list or set)"
+                return "\n".join(f"{i+1}) \"{m}\"" for i, m in enumerate(members))
+            elif cmd == "SREM":
+                if len(parts) < 3:
+                    return "ERR syntax error: SREM key member [member ...]"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], set):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                removed = 0
+                for member in parts[2:]:
+                    if member in self.storage[key]:
+                        self.storage[key].remove(member)
+                        removed += 1
+                if not self.storage[key]:
+                    del self.storage[key]
+                    self.expires.pop(key, None)
+                return f"(integer) {removed}"
+            elif cmd == "SISMEMBER":
+                if len(parts) < 3:
+                    return "ERR syntax error: SISMEMBER key member"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], set):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return "(integer) 1" if parts[2] in self.storage[key] else "(integer) 0"
+            elif cmd == "SCARD":
+                if len(parts) < 2:
+                    return "ERR syntax error: SCARD key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], set):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return f"(integer) {len(self.storage[key])}"
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
@@ -330,6 +392,11 @@ class StorageEngine:
                     "HGET key field - Get hash field value",
                     "HDEL key field... - Delete one or more hash fields",
                     "HGETALL key - Get all fields and values in hash",
+                    "SADD key member... - Add one or more members to set",
+                    "SMEMBERS key - Get all members of set",
+                    "SREM key member... - Remove one or more members from set",
+                    "SISMEMBER key member - Check membership in set",
+                    "SCARD key - Return number of members in set",
                     "FLUSHALL - Clear all stored data",
                     "HELP - Show manual",
                     "QUIT - Exit server"
