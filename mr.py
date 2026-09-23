@@ -245,6 +245,65 @@ class StorageEngine:
                 if not isinstance(self.storage[key], list):
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 return f"(integer) {len(self.storage[key])}"
+            elif cmd == "HSET":
+                if len(parts) < 4:
+                    return "ERR syntax error: HSET key field value"
+                key = parts[1]
+                field = parts[2]
+                val = " ".join(parts[3:])
+                self._check_expired(key)
+                if key in self.storage and not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                if key not in self.storage:
+                    self.storage[key] = {}
+                is_new = 1 if field not in self.storage[key] else 0
+                self.storage[key][field] = val
+                return f"(integer) {is_new}"
+            elif cmd == "HGET":
+                if len(parts) < 3:
+                    return "ERR syntax error: HGET key field"
+                key = parts[1]
+                field = parts[2]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(nil)"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return f"\"{self.storage[key][field]}\"" if field in self.storage[key] else "(nil)"
+            elif cmd == "HDEL":
+                if len(parts) < 3:
+                    return "ERR syntax error: HDEL key field [field ...]"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                deleted = 0
+                for f in parts[2:]:
+                    if f in self.storage[key]:
+                        del self.storage[key][f]
+                        deleted += 1
+                if not self.storage[key]:
+                    del self.storage[key]
+                    self.expires.pop(key, None)
+                return f"(integer) {deleted}"
+            elif cmd == "HGETALL":
+                if len(parts) < 2:
+                    return "ERR syntax error: HGETALL key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(empty list or set)"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                d = self.storage[key]
+                if not d:
+                    return "(empty list or set)"
+                res = []
+                idx = 1
+                for f, v in d.items():
+                    res.append(f"{idx}) \"{f}\"")
+                    res.append(f"{idx+1}) \"{v}\"")
+                    idx += 2
+                return "\n".join(res)
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
@@ -267,6 +326,10 @@ class StorageEngine:
                     "LPOP key - Remove and return first element of list",
                     "RPOP key - Remove and return last element of list",
                     "LLEN key - Return length of list",
+                    "HSET key field value - Set hash field to value",
+                    "HGET key field - Get hash field value",
+                    "HDEL key field... - Delete one or more hash fields",
+                    "HGETALL key - Get all fields and values in hash",
                     "FLUSHALL - Clear all stored data",
                     "HELP - Show manual",
                     "QUIT - Exit server"
