@@ -204,6 +204,47 @@ class StorageEngine:
                 if not sub:
                     return "(empty list or set)"
                 return "\n".join(f"{i+1}) \"{item}\"" for i, item in enumerate(sub))
+            elif cmd == "LPOP":
+                if len(parts) < 2:
+                    return "ERR syntax error: LPOP key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(nil)"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                lst = self.storage[key]
+                if not lst:
+                    return "(nil)"
+                val = lst.pop(0)
+                if not lst:
+                    del self.storage[key]
+                    self.expires.pop(key, None)
+                return f"\"{val}\""
+            elif cmd == "RPOP":
+                if len(parts) < 2:
+                    return "ERR syntax error: RPOP key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(nil)"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                lst = self.storage[key]
+                if not lst:
+                    return "(nil)"
+                val = lst.pop()
+                if not lst:
+                    del self.storage[key]
+                    self.expires.pop(key, None)
+                return f"\"{val}\""
+            elif cmd == "LLEN":
+                if len(parts) < 2:
+                    return "ERR syntax error: LLEN key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return f"(integer) {len(self.storage[key])}"
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
@@ -223,6 +264,9 @@ class StorageEngine:
                     "LPUSH key value... - Insert elements at head of list",
                     "RPUSH key value... - Append elements to tail of list",
                     "LRANGE key start stop - Get range of elements from list",
+                    "LPOP key - Remove and return first element of list",
+                    "RPOP key - Remove and return last element of list",
+                    "LLEN key - Return length of list",
                     "FLUSHALL - Clear all stored data",
                     "HELP - Show manual",
                     "QUIT - Exit server"
