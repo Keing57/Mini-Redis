@@ -366,6 +366,37 @@ class StorageEngine:
                 if not isinstance(self.storage[key], set):
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 return f"(integer) {len(self.storage[key])}"
+            elif cmd == "TYPE":
+                if len(parts) < 2:
+                    return "ERR syntax error: TYPE key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "none"
+                val = self.storage[key]
+                if isinstance(val, str):
+                    return "string"
+                elif isinstance(val, list):
+                    return "list"
+                elif isinstance(val, dict):
+                    return "hash"
+                elif isinstance(val, set):
+                    return "set"
+                return "unknown"
+            elif cmd == "RENAME":
+                if len(parts) < 3:
+                    return "ERR syntax error: RENAME key newkey"
+                key = parts[1]
+                newkey = parts[2]
+                if self._check_expired(key) or key not in self.storage:
+                    return "ERR no such key"
+                if key == newkey:
+                    return "OK"
+                self.storage[newkey] = self.storage.pop(key)
+                if key in self.expires:
+                    self.expires[newkey] = self.expires.pop(key)
+                elif newkey in self.expires:
+                    del self.expires[newkey]
+                return "OK"
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
@@ -397,6 +428,8 @@ class StorageEngine:
                     "SREM key member... - Remove one or more members from set",
                     "SISMEMBER key member - Check membership in set",
                     "SCARD key - Return number of members in set",
+                    "TYPE key - Determine key data type",
+                    "RENAME key newkey - Rename a key",
                     "FLUSHALL - Clear all stored data",
                     "HELP - Show manual",
                     "QUIT - Exit server"
