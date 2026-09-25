@@ -1,17 +1,58 @@
 import sys
 import time
 import threading
+import json
+import os
 
 class StorageEngine:
-    def __init__(self):
+    def __init__(self, filename="dump.json"):
         self.storage = {}
         self.expires = {}
         self.lock = threading.Lock()
         self.running = True
         self.start_time = time.time()
         self.commands_processed = 0
+        self.filename = filename
+        self._load_from_disk()
         self.cleaner_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
         self.cleaner_thread.start()
+
+    def _load_from_disk(self):
+        if not os.path.exists(self.filename):
+            return
+        try:
+            with open(self.filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            now = time.time()
+            raw_expires = data.get("expires", {})
+            raw_storage = data.get("storage", {})
+            for k, exp in raw_expires.items():
+                if exp > now:
+                    self.expires[k] = exp
+            for k, v in raw_storage.items():
+                if k in raw_expires and raw_expires[k] <= now:
+                    continue
+                if isinstance(v, dict) and v.get("__type__") == "set":
+                    self.storage[k] = set(v["data"])
+                else:
+                    self.storage[k] = v
+        except Exception:
+            pass
+
+    def _get_serializable_snapshot(self):
+        data = {"storage": {}, "expires": dict(self.expires)}
+        for k, v in self.storage.items():
+            if isinstance(v, set):
+                data["storage"][k] = {"__type__": "set", "data": list(v)}
+            else:
+                data["storage"][k] = v
+        return data
+
+    def _write_to_file(self, data):
+        temp_file = self.filename + ".tmp"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(temp_file, self.filename)
 
     def _cleanup_loop(self):
         while self.running:
@@ -412,9 +453,20 @@ class StorageEngine:
                     f"expires_keys:{len(self.expires)}"
                 ]
                 return "\n".join(info_lines)
+            elif cmd == "SAVE":
+                data = self._get_serializable_snapshot()
+                self._write_to_file(data)
+                return "OK"
+            elif cmd == "BGSAVE":
+                data = self._get_serializable_snapshot()
+                t = threading.Thread(target=self._write_to_file, args=(data,), daemon=True)
+                t.start()
+                return "Background saving started"
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
+                if os.path.exists(self.filename):
+                    os.remove(self.filename)
                 return "OK"
             elif cmd == "HELP":
                 commands = [
@@ -446,7 +498,9 @@ class StorageEngine:
                     "TYPE key - Determine key data type",
                     "RENAME key newkey - Rename a key",
                     "INFO - Show server telemetry and metrics",
-                    "FLUSHALL - Clear all stored data",
+                    "SAVE - Synchronously save dataset to disk",
+                    "BGSAVE - Asynchronously save dataset to disk",
+                    "FLUSHALL - Clear all stored data and remove dump",
                     "HELP - Show manual",
                     "QUIT - Exit server"
                 ]
