@@ -8,6 +8,8 @@ class StorageEngine:
         self.expires = {}
         self.lock = threading.Lock()
         self.running = True
+        self.start_time = time.time()
+        self.commands_processed = 0
         self.cleaner_thread = threading.Thread(target=self._cleanup_loop, daemon=True)
         self.cleaner_thread.start()
 
@@ -37,6 +39,7 @@ class StorageEngine:
         cmd = parts[0].upper()
         
         with self.lock:
+            self.commands_processed += 1
             if cmd == "SET":
                 if len(parts) < 3:
                     return "ERR syntax error: SET key value"
@@ -397,6 +400,18 @@ class StorageEngine:
                 elif newkey in self.expires:
                     del self.expires[newkey]
                 return "OK"
+            elif cmd == "INFO":
+                uptime = int(time.time() - self.start_time)
+                info_lines = [
+                    "# Server",
+                    f"uptime_in_seconds:{uptime}",
+                    f"total_commands_processed:{self.commands_processed}",
+                    "",
+                    "# Keyspace",
+                    f"total_keys:{len(self.storage)}",
+                    f"expires_keys:{len(self.expires)}"
+                ]
+                return "\n".join(info_lines)
             elif cmd == "FLUSHALL":
                 self.storage.clear()
                 self.expires.clear()
@@ -430,6 +445,7 @@ class StorageEngine:
                     "SCARD key - Return number of members in set",
                     "TYPE key - Determine key data type",
                     "RENAME key newkey - Rename a key",
+                    "INFO - Show server telemetry and metrics",
                     "FLUSHALL - Clear all stored data",
                     "HELP - Show manual",
                     "QUIT - Exit server"
