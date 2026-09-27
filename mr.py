@@ -1,3 +1,4 @@
+import socket
 import sys
 import time
 import threading
@@ -502,26 +503,54 @@ class StorageEngine:
                     "BGSAVE - Asynchronously save dataset to disk",
                     "FLUSHALL - Clear all stored data and remove dump",
                     "HELP - Show manual",
-                    "QUIT - Exit server"
+                    "QUIT - Close client connection"
                 ]
                 return "\n".join(commands)
             elif cmd == "QUIT":
-                self.running = False
-                sys.exit(0)
+                return "QUIT"
             else:
                 return f"ERR unknown command '{cmd}'"
 
-def main():
-    engine = StorageEngine()
+def handle_client(conn, addr, engine):
+    reader = conn.makefile("r", encoding="utf-8")
     while True:
         try:
-            line = input("miniredis> ")
+            line = reader.readline()
+            if not line:
+                break
+            line = line.strip()
+            if not line:
+                continue
             response = engine.execute(line)
+            if response == "QUIT":
+                conn.sendall(b"OK\r\n")
+                break
             if response:
-                print(response)
-        except (EOFError, KeyboardInterrupt):
-            engine.running = False
+                out = response + "\r\n"
+                conn.sendall(out.encode("utf-8"))
+        except (ConnectionResetError, BrokenPipeError):
             break
+    conn.close()
+
+def main():
+    host = "127.0.0.1"
+    port = 6379
+    engine = StorageEngine()
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock.bind((host, port))
+    server_sock.listen(128)
+    print(f"Mini-Redis listening on {host}:{port}")
+    try:
+        while True:
+            conn, addr = server_sock.accept()
+            client_thread = threading.Thread(target=handle_client, args=(conn, addr, engine), daemon=True)
+            client_thread.start()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        engine.running = False
+        server_sock.close()
 
 if __name__ == "__main__":
     main()
