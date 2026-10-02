@@ -137,6 +137,29 @@ class StorageEngine:
                     else:
                         res.append(f"{idx}) \"{self.storage[k]}\"")
                 return "\n".join(res)
+            elif cmd == "APPEND":
+                if len(parts) < 3:
+                    return "ERR syntax error: APPEND key value"
+                key = parts[1]
+                val = " ".join(parts[2:])
+                self._check_expired(key)
+                if key in self.storage:
+                    if not isinstance(self.storage[key], str):
+                        return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                    self.storage[key] += val
+                else:
+                    self.storage[key] = val
+                    self.expires.pop(key, None)
+                return f"(integer) {len(self.storage[key])}"
+            elif cmd == "STRLEN":
+                if len(parts) < 2:
+                    return "ERR syntax error: STRLEN key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return f"(integer) {len(self.storage[key])}"
             elif cmd == "GET":
                 if len(parts) < 2:
                     return "ERR syntax error: GET key"
@@ -511,6 +534,8 @@ class StorageEngine:
                     "SETEX key seconds value - Store string value with expiration",
                     "MSET key value... - Store multiple key-value pairs",
                     "MGET key... - Retrieve values of multiple keys",
+                    "APPEND key value - Append value to existing string",
+                    "STRLEN key - Return length of stored string",
                     "GET key - Retrieve value by key",
                     "DEL key - Delete a key",
                     "EXISTS key - Check if key exists",
