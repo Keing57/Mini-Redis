@@ -116,6 +116,27 @@ class StorageEngine:
                     return "OK"
                 except ValueError:
                     return "ERR value is not an integer or out of range"
+            elif cmd == "MSET":
+                if len(parts) < 3 or (len(parts) - 1) % 2 != 0:
+                    return "ERR syntax error: MSET key value [key value ...]"
+                for i in range(1, len(parts), 2):
+                    k = parts[i]
+                    v = parts[i + 1]
+                    self.storage[k] = v
+                    self.expires.pop(k, None)
+                return "OK"
+            elif cmd == "MGET":
+                if len(parts) < 2:
+                    return "ERR syntax error: MGET key [key ...]"
+                res = []
+                for idx, k in enumerate(parts[1:], 1):
+                    if self._check_expired(k) or k not in self.storage:
+                        res.append(f"{idx}) (nil)")
+                    elif not isinstance(self.storage[k], str):
+                        res.append(f"{idx}) (nil)")
+                    else:
+                        res.append(f"{idx}) \"{self.storage[k]}\"")
+                return "\n".join(res)
             elif cmd == "GET":
                 if len(parts) < 2:
                     return "ERR syntax error: GET key"
@@ -488,6 +509,8 @@ class StorageEngine:
                     "DBSIZE - Return the number of keys in database",
                     "SET key value - Store string value",
                     "SETEX key seconds value - Store string value with expiration",
+                    "MSET key value... - Store multiple key-value pairs",
+                    "MGET key... - Retrieve values of multiple keys",
                     "GET key - Retrieve value by key",
                     "DEL key - Delete a key",
                     "EXISTS key - Check if key exists",
