@@ -82,7 +82,19 @@ class StorageEngine:
         
         with self.lock:
             self.commands_processed += 1
-            if cmd == "SET":
+            if cmd == "PING":
+                if len(parts) > 1:
+                    return f"\"{' '.join(parts[1:])}\""
+                return "PONG"
+            elif cmd == "ECHO":
+                if len(parts) < 2:
+                    return "ERR syntax error: ECHO message"
+                return f"\"{' '.join(parts[1:])}\""
+            elif cmd == "DBSIZE":
+                for k in list(self.storage.keys()):
+                    self._check_expired(k)
+                return f"(integer) {len(self.storage)}"
+            elif cmd == "SET":
                 if len(parts) < 3:
                     return "ERR syntax error: SET key value"
                 key = parts[1]
@@ -471,6 +483,9 @@ class StorageEngine:
                 return "OK"
             elif cmd == "HELP":
                 commands = [
+                    "PING [message] - Ping the server",
+                    "ECHO message - Echo the given message",
+                    "DBSIZE - Return the number of keys in database",
                     "SET key value - Store string value",
                     "SETEX key seconds value - Store string value with expiration",
                     "GET key - Retrieve value by key",
