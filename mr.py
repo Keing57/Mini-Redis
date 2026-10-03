@@ -467,6 +467,63 @@ class StorageEngine:
                 if not isinstance(self.storage[key], set):
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 return f"(integer) {len(self.storage[key])}"
+            elif cmd == "SINTER":
+                if len(parts) < 2:
+                    return "ERR syntax error: SINTER key [key ...]"
+                sets_to_intersect = []
+                for k in parts[1:]:
+                    if self._check_expired(k) or k not in self.storage:
+                        sets_to_intersect.append(set())
+                    else:
+                        val = self.storage[k]
+                        if not isinstance(val, set):
+                            return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                        sets_to_intersect.append(val)
+                if not sets_to_intersect:
+                    return "(empty list or set)"
+                res_set = sets_to_intersect[0].copy()
+                for s in sets_to_intersect[1:]:
+                    res_set &= s
+                if not res_set:
+                    return "(empty list or set)"
+                members = list(res_set)
+                return "\n".join(f"{i+1}) \"{m}\"" for i, m in enumerate(members))
+            elif cmd == "SUNION":
+                if len(parts) < 2:
+                    return "ERR syntax error: SUNION key [key ...]"
+                res_set = set()
+                for k in parts[1:]:
+                    if self._check_expired(k) or k not in self.storage:
+                        continue
+                    val = self.storage[k]
+                    if not isinstance(val, set):
+                        return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                    res_set |= val
+                if not res_set:
+                    return "(empty list or set)"
+                members = list(res_set)
+                return "\n".join(f"{i+1}) \"{m}\"" for i, m in enumerate(members))
+            elif cmd == "SDIFF":
+                if len(parts) < 2:
+                    return "ERR syntax error: SDIFF key [key ...]"
+                first_key = parts[1]
+                if self._check_expired(first_key) or first_key not in self.storage:
+                    return "(empty list or set)"
+                first_val = self.storage[first_key]
+                if not isinstance(first_val, set):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                res_set = first_val.copy()
+                for k in parts[2:]:
+                    if self._check_expired(k) or k not in self.storage:
+                        continue
+                    val = self.storage[k]
+                    if not isinstance(val, set):
+                        return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                    res_set -= val
+                if not res_set:
+                    return "(empty list or set)"
+                members = list(res_set)
+                return "\n".join(f"{i+1}) \"{m}\"" for i, m in enumerate(members))
             elif cmd == "TYPE":
                 if len(parts) < 2:
                     return "ERR syntax error: TYPE key"
@@ -559,6 +616,9 @@ class StorageEngine:
                     "SREM key member... - Remove one or more members from set",
                     "SISMEMBER key member - Check membership in set",
                     "SCARD key - Return number of members in set",
+                    "SINTER key... - Intersect multiple sets",
+                    "SUNION key... - Union multiple sets",
+                    "SDIFF key... - Subtract multiple sets from the first",
                     "TYPE key - Determine key data type",
                     "RENAME key newkey - Rename a key",
                     "INFO - Show server telemetry and metrics",
