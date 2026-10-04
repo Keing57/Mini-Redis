@@ -116,6 +116,30 @@ class StorageEngine:
                     return "OK"
                 except ValueError:
                     return "ERR value is not an integer or out of range"
+            elif cmd == "GETSET":
+                if len(parts) < 3:
+                    return "ERR syntax error: GETSET key value"
+                key = parts[1]
+                val = " ".join(parts[2:])
+                self._check_expired(key)
+                old_val = self.storage.get(key)
+                if old_val is not None and not isinstance(old_val, str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                self.storage[key] = val
+                self.expires.pop(key, None)
+                if old_val is None:
+                    return "(nil)"
+                return f"\"{old_val}\""
+            elif cmd == "PERSIST":
+                if len(parts) < 2:
+                    return "ERR syntax error: PERSIST key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if key in self.expires:
+                    del self.expires[key]
+                    return "(integer) 1"
+                return "(integer) 0"
             elif cmd == "MSET":
                 if len(parts) < 3 or (len(parts) - 1) % 2 != 0:
                     return "ERR syntax error: MSET key value [key value ...]"
@@ -589,6 +613,7 @@ class StorageEngine:
                     "DBSIZE - Return the number of keys in database",
                     "SET key value - Store string value",
                     "SETEX key seconds value - Store string value with expiration",
+                    "GETSET key value - Set value and return old value",
                     "MSET key value... - Store multiple key-value pairs",
                     "MGET key... - Retrieve values of multiple keys",
                     "APPEND key value - Append value to existing string",
@@ -598,6 +623,7 @@ class StorageEngine:
                     "EXISTS key - Check if key exists",
                     "KEYS - List all keys",
                     "EXPIRE key seconds - Set timeout on a key",
+                    "PERSIST key - Remove timeout from a key",
                     "TTL key - Get remaining time to live",
                     "INCR key - Increment integer value",
                     "DECR key - Decrement integer value",
