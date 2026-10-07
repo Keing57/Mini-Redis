@@ -265,6 +265,24 @@ class StorageEngine:
                     return f"(integer) {val}"
                 except ValueError:
                     return "ERR value is not an integer or out of range"
+            elif cmd == "INCRBY":
+                if len(parts) < 3:
+                    return "ERR syntax error: INCRBY key increment"
+                key = parts[1]
+                self._check_expired(key)
+                try:
+                    delta = int(parts[2])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                current = self.storage.get(key, "0")
+                if not isinstance(current, str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    val = int(current) + delta
+                    self.storage[key] = str(val)
+                    return f"(integer) {val}"
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
             elif cmd == "DECR":
                 if len(parts) < 2:
                     return "ERR syntax error: DECR key"
@@ -275,6 +293,24 @@ class StorageEngine:
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 try:
                     val = int(current) - 1
+                    self.storage[key] = str(val)
+                    return f"(integer) {val}"
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+            elif cmd == "DECRBY":
+                if len(parts) < 3:
+                    return "ERR syntax error: DECRBY key decrement"
+                key = parts[1]
+                self._check_expired(key)
+                try:
+                    delta = int(parts[2])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                current = self.storage.get(key, "0")
+                if not isinstance(current, str):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    val = int(current) - delta
                     self.storage[key] = str(val)
                     return f"(integer) {val}"
                 except ValueError:
@@ -625,8 +661,10 @@ class StorageEngine:
                     "EXPIRE key seconds - Set timeout on a key",
                     "PERSIST key - Remove timeout from a key",
                     "TTL key - Get remaining time to live",
-                    "INCR key - Increment integer value",
-                    "DECR key - Decrement integer value",
+                    "INCR key - Increment integer value by 1",
+                    "INCRBY key increment - Increment integer value by step",
+                    "DECR key - Decrement integer value by 1",
+                    "DECRBY key decrement - Decrement integer value by step",
                     "LPUSH key value... - Insert elements at head of list",
                     "RPUSH key value... - Append elements to tail of list",
                     "LRANGE key start stop - Get range of elements from list",
