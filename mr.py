@@ -102,6 +102,17 @@ class StorageEngine:
                 self.storage[key] = val
                 self.expires.pop(key, None)
                 return "OK"
+            elif cmd == "SETNX":
+                if len(parts) < 3:
+                    return "ERR syntax error: SETNX key value"
+                key = parts[1]
+                val = " ".join(parts[2:])
+                self._check_expired(key)
+                if key in self.storage:
+                    return "(integer) 0"
+                self.storage[key] = val
+                self.expires.pop(key, None)
+                return "(integer) 1"
             elif cmd == "SETEX":
                 if len(parts) < 4:
                     return "ERR syntax error: SETEX key seconds value"
@@ -430,6 +441,25 @@ class StorageEngine:
                 if not isinstance(self.storage[key], dict):
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 return f"\"{self.storage[key][field]}\"" if field in self.storage[key] else "(nil)"
+            elif cmd == "HEXISTS":
+                if len(parts) < 3:
+                    return "ERR syntax error: HEXISTS key field"
+                key = parts[1]
+                field = parts[2]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return "(integer) 1" if field in self.storage[key] else "(integer) 0"
+            elif cmd == "HLEN":
+                if len(parts) < 2:
+                    return "ERR syntax error: HLEN key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return f"(integer) {len(self.storage[key])}"
             elif cmd == "HDEL":
                 if len(parts) < 3:
                     return "ERR syntax error: HDEL key field [field ...]"
@@ -648,6 +678,7 @@ class StorageEngine:
                     "ECHO message - Echo the given message",
                     "DBSIZE - Return the number of keys in database",
                     "SET key value - Store string value",
+                    "SETNX key value - Store string value only if key does not exist",
                     "SETEX key seconds value - Store string value with expiration",
                     "GETSET key value - Set value and return old value",
                     "MSET key value... - Store multiple key-value pairs",
@@ -673,6 +704,8 @@ class StorageEngine:
                     "LLEN key - Return length of list",
                     "HSET key field value - Set hash field to value",
                     "HGET key field - Get hash field value",
+                    "HEXISTS key field - Check if hash field exists",
+                    "HLEN key - Return number of fields in hash",
                     "HDEL key field... - Delete one or more hash fields",
                     "HGETALL key - Get all fields and values in hash",
                     "SADD key member... - Add one or more members to set",
