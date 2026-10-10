@@ -376,6 +376,44 @@ class StorageEngine:
                 if not sub:
                     return "(empty list or set)"
                 return "\n".join(f"{i+1}) \"{item}\"" for i, item in enumerate(sub))
+            elif cmd == "LINDEX":
+                if len(parts) < 3:
+                    return "ERR syntax error: LINDEX key index"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(nil)"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    idx = int(parts[2])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                lst = self.storage[key]
+                if idx < 0:
+                    idx = len(lst) + idx
+                if 0 <= idx < len(lst):
+                    return f"\"{lst[idx]}\""
+                return "(nil)"
+            elif cmd == "LSET":
+                if len(parts) < 4:
+                    return "ERR syntax error: LSET key index value"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "ERR no such key"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    idx = int(parts[2])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                val = " ".join(parts[3:])
+                lst = self.storage[key]
+                if idx < 0:
+                    idx = len(lst) + idx
+                if not (0 <= idx < len(lst)):
+                    return "ERR index out of range"
+                lst[idx] = val
+                return "OK"
             elif cmd == "LPOP":
                 if len(parts) < 2:
                     return "ERR syntax error: LPOP key"
@@ -723,6 +761,8 @@ class StorageEngine:
                     "LPUSH key value... - Insert elements at head of list",
                     "RPUSH key value... - Append elements to tail of list",
                     "LRANGE key start stop - Get range of elements from list",
+                    "LINDEX key index - Get element from list by index",
+                    "LSET key index value - Set list element at index",
                     "LPOP key - Remove and return first element of list",
                     "RPOP key - Remove and return last element of list",
                     "LLEN key - Return length of list",
