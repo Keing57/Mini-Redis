@@ -460,6 +460,30 @@ class StorageEngine:
                 if not isinstance(self.storage[key], dict):
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 return f"(integer) {len(self.storage[key])}"
+            elif cmd == "HKEYS":
+                if len(parts) < 2:
+                    return "ERR syntax error: HKEYS key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(empty list or set)"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                fields = list(self.storage[key].keys())
+                if not fields:
+                    return "(empty list or set)"
+                return "\n".join(f"{i+1}) \"{f}\"" for i, f in enumerate(fields))
+            elif cmd == "HVALS":
+                if len(parts) < 2:
+                    return "ERR syntax error: HVALS key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(empty list or set)"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                values = list(self.storage[key].values())
+                if not values:
+                    return "(empty list or set)"
+                return "\n".join(f"{i+1}) \"{v}\"" for i, v in enumerate(values))
             elif cmd == "HDEL":
                 if len(parts) < 3:
                     return "ERR syntax error: HDEL key field [field ...]"
@@ -706,6 +730,8 @@ class StorageEngine:
                     "HGET key field - Get hash field value",
                     "HEXISTS key field - Check if hash field exists",
                     "HLEN key - Return number of fields in hash",
+                    "HKEYS key - Return all field names in hash",
+                    "HVALS key - Return all values in hash",
                     "HDEL key field... - Delete one or more hash fields",
                     "HGETALL key - Get all fields and values in hash",
                     "SADD key member... - Add one or more members to set",
