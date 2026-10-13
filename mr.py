@@ -4,6 +4,7 @@ import time
 import threading
 import json
 import os
+import fnmatch
 
 class StorageEngine:
     def __init__(self, filename="dump.json"):
@@ -227,9 +228,10 @@ class StorageEngine:
                     return "(integer) 1"
                 return "(integer) 0"
             elif cmd == "KEYS":
+                pattern = parts[1] if len(parts) > 1 else "*"
                 for k in list(self.storage.keys()):
                     self._check_expired(k)
-                keys = list(self.storage.keys())
+                keys = [k for k in self.storage.keys() if fnmatch.fnmatch(k, pattern)]
                 if not keys:
                     return "(empty list or set)"
                 return "\n".join(f"{i+1}) \"{k}\"" for i, k in enumerate(keys))
@@ -376,6 +378,34 @@ class StorageEngine:
                 if not sub:
                     return "(empty list or set)"
                 return "\n".join(f"{i+1}) \"{item}\"" for i, item in enumerate(sub))
+            elif cmd == "LTRIM":
+                if len(parts) < 4:
+                    return "ERR syntax error: LTRIM key start stop"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "OK"
+                if not isinstance(self.storage[key], list):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    start = int(parts[2])
+                    stop = int(parts[3])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                lst = self.storage[key]
+                n = len(lst)
+                if start < 0:
+                    start = max(0, n + start)
+                if stop < 0:
+                    stop = n + stop
+                if start > stop or start >= n:
+                    self.storage[key] = []
+                else:
+                    stop = min(stop, n - 1)
+                    self.storage[key] = lst[start:stop + 1]
+                if not self.storage[key]:
+                    del self.storage[key]
+                    self.expires.pop(key, None)
+                return "OK"
             elif cmd == "LINDEX":
                 if len(parts) < 3:
                     return "ERR syntax error: LINDEX key index"
@@ -750,7 +780,7 @@ class StorageEngine:
                     "GET key - Retrieve value by key",
                     "DEL key - Delete a key",
                     "EXISTS key - Check if key exists",
-                    "KEYS - List all keys",
+                    "KEYS [pattern] - List keys matching pattern",
                     "EXPIRE key seconds - Set timeout on a key",
                     "PERSIST key - Remove timeout from a key",
                     "TTL key - Get remaining time to live",
@@ -761,6 +791,7 @@ class StorageEngine:
                     "LPUSH key value... - Insert elements at head of list",
                     "RPUSH key value... - Append elements to tail of list",
                     "LRANGE key start stop - Get range of elements from list",
+                    "LTRIM key start stop - Trim list to specified range",
                     "LINDEX key index - Get element from list by index",
                     "LSET key index value - Set list element at index",
                     "LPOP key - Remove and return first element of list",
