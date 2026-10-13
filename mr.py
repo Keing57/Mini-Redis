@@ -737,6 +737,15 @@ class StorageEngine:
                 elif newkey in self.expires:
                     del self.expires[newkey]
                 return "OK"
+            elif cmd == "MEMORY":
+                if len(parts) < 3 or parts[1].upper() != "USAGE":
+                    return "ERR syntax error: MEMORY USAGE key"
+                key = parts[2]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(nil)"
+                val = self.storage[key]
+                size = sys.getsizeof(val) + sys.getsizeof(key)
+                return f"(integer) {size}"
             elif cmd == "INFO":
                 uptime = int(time.time() - self.start_time)
                 info_lines = [
@@ -815,6 +824,7 @@ class StorageEngine:
                     "SDIFF key... - Subtract multiple sets from the first",
                     "TYPE key - Determine key data type",
                     "RENAME key newkey - Rename a key",
+                    "MEMORY USAGE key - Estimate memory usage of a key",
                     "INFO - Show server telemetry and metrics",
                     "SAVE - Synchronously save dataset to disk",
                     "BGSAVE - Asynchronously save dataset to disk",
