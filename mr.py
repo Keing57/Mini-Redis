@@ -235,6 +235,31 @@ class StorageEngine:
                 if not keys:
                     return "(empty list or set)"
                 return "\n".join(f"{i+1}) \"{k}\"" for i, k in enumerate(keys))
+            elif cmd == "SCAN":
+                if len(parts) < 2:
+                    return "ERR syntax error: SCAN cursor [MATCH pattern]"
+                try:
+                    cursor = int(parts[1])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                pattern = "*"
+                if len(parts) >= 4 and parts[2].upper() == "MATCH":
+                    pattern = parts[3]
+                for k in list(self.storage.keys()):
+                    self._check_expired(k)
+                all_keys = sorted([k for k in self.storage.keys() if fnmatch.fnmatch(k, pattern)])
+                batch_size = 10
+                slice_keys = all_keys[cursor:cursor + batch_size]
+                next_cursor = cursor + batch_size
+                if next_cursor >= len(all_keys):
+                    next_cursor = 0
+                res = [f"1) \"{next_cursor}\"", "2)"]
+                if not slice_keys:
+                    res.append(" (empty list or set)")
+                else:
+                    sub_res = [f"   {i+1}) \"{k}\"" for i, k in enumerate(slice_keys)]
+                    res.append("\n" + "\n".join(sub_res))
+                return "\n".join(res)
             elif cmd == "EXPIRE":
                 if len(parts) < 3:
                     return "ERR syntax error: EXPIRE key seconds"
@@ -790,6 +815,7 @@ class StorageEngine:
                     "DEL key - Delete a key",
                     "EXISTS key - Check if key exists",
                     "KEYS [pattern] - List keys matching pattern",
+                    "SCAN cursor [MATCH pattern] - Incrementally iterate keys",
                     "EXPIRE key seconds - Set timeout on a key",
                     "PERSIST key - Remove timeout from a key",
                     "TTL key - Get remaining time to live",
@@ -829,6 +855,9 @@ class StorageEngine:
                     "SAVE - Synchronously save dataset to disk",
                     "BGSAVE - Asynchronously save dataset to disk",
                     "FLUSHALL - Clear all stored data and remove dump",
+                    "MULTI - Mark the start of a transaction block",
+                    "EXEC - Execute all commands issued after MULTI",
+                    "DISCARD - Discard all commands issued after MULTI",
                     "HELP - Show manual",
                     "QUIT - Close client connection"
                 ]
@@ -840,6 +869,8 @@ class StorageEngine:
 
 def handle_client(conn, addr, engine):
     reader = conn.makefile("r", encoding="utf-8")
+    in_multi = False
+    queue = []
     while True:
         try:
             line = reader.readline()
@@ -848,6 +879,51 @@ def handle_client(conn, addr, engine):
             line = line.strip()
             if not line:
                 continue
+            parts = line.split()
+            cmd = parts[0].upper()
+
+            if in_multi:
+                if cmd == "EXEC":
+                    results = []
+                    for q_line in queue:
+                        res = engine.execute(q_line)
+                        if res == "QUIT":
+                            results.append("OK")
+                        else:
+                            results.append(res)
+                    in_multi = False
+                    queue = []
+                    formatted = []
+                    for idx, r in enumerate(results, 1):
+                        formatted.append(f"{idx}) {r}")
+                    out = "\n".join(formatted) + "\r\n"
+                    conn.sendall(out.encode("utf-8"))
+                    continue
+                elif cmd == "DISCARD":
+                    in_multi = False
+                    queue = []
+                    conn.sendall(b"OK\r\n")
+                    continue
+                elif cmd == "MULTI":
+                    conn.sendall(b"ERR MULTI calls can not be nested\r\n")
+                    continue
+                else:
+                    queue.append(line)
+                    conn.sendall(b"QUEUED\r\n")
+                    continue
+
+            if cmd == "MULTI":
+                in_multi = True
+                queue = []
+                conn.sendall(b"OK\r\n")
+                continue
+            elif cmd == "EXEC":
+                conn.sendall(b"ERR EXEC without MULTI\r\n")
+                continue
+            elif cmd == "DISCARD":
+                conn.sendall(b"ERR DISCARD without MULTI\r\n")
+                continue
+
             response = engine.execute(line)
             if response == "QUIT":
                 conn.sendall(b"OK\r\n")
