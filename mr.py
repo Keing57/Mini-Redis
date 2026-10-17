@@ -34,8 +34,13 @@ class StorageEngine:
             for k, v in raw_storage.items():
                 if k in raw_expires and raw_expires[k] <= now:
                     continue
-                if isinstance(v, dict) and v.get("__type__") == "set":
-                    self.storage[k] = set(v["data"])
+                if isinstance(v, dict):
+                    if v.get("__type__") == "set":
+                        self.storage[k] = set(v["data"])
+                    elif v.get("__type__") == "zset":
+                        self.storage[k] = {m: float(s) for m, s in v["data"].items()}
+                    else:
+                        self.storage[k] = v
                 else:
                     self.storage[k] = v
         except Exception:
@@ -46,6 +51,11 @@ class StorageEngine:
         for k, v in self.storage.items():
             if isinstance(v, set):
                 data["storage"][k] = {"__type__": "set", "data": list(v)}
+            elif isinstance(v, dict) and any(isinstance(val, float) or isinstance(val, int) for val in v.values()):
+                if not any(isinstance(x, str) and x.startswith("__") for x in v.keys()):
+                    data["storage"][k] = {"__type__": "zset", "data": v}
+                else:
+                    data["storage"][k] = v
             else:
                 data["storage"][k] = v
         return data
@@ -731,6 +741,72 @@ class StorageEngine:
                     return "(empty list or set)"
                 members = list(res_set)
                 return "\n".join(f"{i+1}) \"{m}\"" for i, m in enumerate(members))
+            elif cmd == "ZADD":
+                if len(parts) < 4 or (len(parts) - 1) % 2 != 0:
+                    return "ERR syntax error: ZADD key score member [score member ...]"
+                key = parts[1]
+                self._check_expired(key)
+                if key in self.storage and not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                if key not in self.storage:
+                    self.storage[key] = {}
+                added = 0
+                for i in range(2, len(parts), 2):
+                    try:
+                        score = float(parts[i])
+                    except ValueError:
+                        return "ERR value is not a valid float"
+                    member = parts[i + 1]
+                    if member not in self.storage[key]:
+                        added += 1
+                    self.storage[key][member] = score
+                return f"(integer) {added}"
+            elif cmd == "ZRANGE":
+                if len(parts) < 4:
+                    return "ERR syntax error: ZRANGE key start stop [WITHSCORES]"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(empty list or set)"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                try:
+                    start = int(parts[2])
+                    stop = int(parts[3])
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
+                with_scores = len(parts) >= 5 and parts[4].upper() == "WITHSCORES"
+                zset = self.storage[key]
+                sorted_items = sorted(zset.items(), key=lambda x: (x[1], x[0]))
+                n = len(sorted_items)
+                if start < 0:
+                    start = max(0, n + start)
+                if stop < 0:
+                    stop = n + stop
+                if start > stop or start >= n:
+                    return "(empty list or set)"
+                stop = min(stop, n - 1)
+                sub = sorted_items[start:stop + 1]
+                if not sub:
+                    return "(empty list or set)"
+                res = []
+                idx = 1
+                for member, score in sub:
+                    res.append(f"{idx}) \"{member}\"")
+                    idx += 1
+                    if with_scores:
+                        score_str = str(int(score)) if score.is_integer() else str(score)
+                        res.append(f"{idx}) \"{score_str}\"")
+                        idx += 1
+                return "\n".join(res)
+            elif cmd == "ZCARD":
+                if len(parts) < 2:
+                    return "ERR syntax error: ZCARD key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                return f"(integer) {len(self.storage[key])}"
             elif cmd == "TYPE":
                 if len(parts) < 2:
                     return "ERR syntax error: TYPE key"
@@ -743,6 +819,8 @@ class StorageEngine:
                 elif isinstance(val, list):
                     return "list"
                 elif isinstance(val, dict):
+                    if any(isinstance(x, float) or isinstance(x, int) for x in val.values()):
+                        return "zset"
                     return "hash"
                 elif isinstance(val, set):
                     return "set"
@@ -848,6 +926,9 @@ class StorageEngine:
                     "SINTER key... - Intersect multiple sets",
                     "SUNION key... - Union multiple sets",
                     "SDIFF key... - Subtract multiple sets from the first",
+                    "ZADD key score member... - Add member with score to sorted set",
+                    "ZRANGE key start stop [WITHSCORES] - Get range of elements from sorted set",
+                    "ZCARD key - Return number of elements in sorted set",
                     "TYPE key - Determine key data type",
                     "RENAME key newkey - Rename a key",
                     "MEMORY USAGE key - Estimate memory usage of a key",
