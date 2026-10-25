@@ -807,6 +807,39 @@ class StorageEngine:
                 if not isinstance(self.storage[key], dict):
                     return "WRONGTYPE Operation against a key holding the wrong kind of value"
                 return f"(integer) {len(self.storage[key])}"
+            elif cmd == "ZREM":
+                if len(parts) < 3:
+                    return "ERR syntax error: ZREM key member [member ...]"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                zset = self.storage[key]
+                removed = 0
+                for member in parts[2:]:
+                    if member in zset:
+                        del zset[member]
+                        removed += 1
+                if not zset:
+                    del self.storage[key]
+                    self.expires.pop(key, None)
+                return f"(integer) {removed}"
+            elif cmd == "ZSCORE":
+                if len(parts) < 3:
+                    return "ERR syntax error: ZSCORE key member"
+                key = parts[1]
+                member = parts[2]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(nil)"
+                if not isinstance(self.storage[key], dict):
+                    return "WRONGTYPE Operation against a key holding the wrong kind of value"
+                zset = self.storage[key]
+                if member not in zset:
+                    return "(nil)"
+                score = zset[member]
+                score_str = str(int(score)) if score.is_integer() else str(score)
+                return f"\"{score_str}\""
             elif cmd == "TYPE":
                 if len(parts) < 2:
                     return "ERR syntax error: TYPE key"
@@ -929,6 +962,8 @@ class StorageEngine:
                     "ZADD key score member... - Add member with score to sorted set",
                     "ZRANGE key start stop [WITHSCORES] - Get range of elements from sorted set",
                     "ZCARD key - Return number of elements in sorted set",
+                    "ZREM key member... - Remove members from sorted set",
+                    "ZSCORE key member - Get score of member in sorted set",
                     "TYPE key - Determine key data type",
                     "RENAME key newkey - Rename a key",
                     "MEMORY USAGE key - Estimate memory usage of a key",
