@@ -286,6 +286,22 @@ class StorageEngine:
                     return "(integer) 1"
                 except ValueError:
                     return "ERR value is not an integer or out of range"
+            elif cmd == "PEXPIRE":
+                if len(parts) < 3:
+                    return "ERR syntax error: PEXPIRE key milliseconds"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) 0"
+                try:
+                    ms = int(parts[2])
+                    if ms <= 0:
+                        self.storage.pop(key, None)
+                        self.expires.pop(key, None)
+                        return "(integer) 1"
+                    self.expires[key] = time.time() + (ms / 1000.0)
+                    return "(integer) 1"
+                except ValueError:
+                    return "ERR value is not an integer or out of range"
             elif cmd == "TTL":
                 if len(parts) < 2:
                     return "ERR syntax error: TTL key"
@@ -299,6 +315,19 @@ class StorageEngine:
                     self._check_expired(key)
                     return "(integer) -2"
                 return f"(integer) {remaining}"
+            elif cmd == "PTTL":
+                if len(parts) < 2:
+                    return "ERR syntax error: PTTL key"
+                key = parts[1]
+                if self._check_expired(key) or key not in self.storage:
+                    return "(integer) -2"
+                if key not in self.expires:
+                    return "(integer) -1"
+                remaining_ms = int((self.expires[key] - time.time()) * 1000)
+                if remaining_ms < 0:
+                    self._check_expired(key)
+                    return "(integer) -2"
+                return f"(integer) {remaining_ms}"
             elif cmd == "INCR":
                 if len(parts) < 2:
                     return "ERR syntax error: INCR key"
@@ -928,8 +957,10 @@ class StorageEngine:
                     "KEYS [pattern] - List keys matching pattern",
                     "SCAN cursor [MATCH pattern] - Incrementally iterate keys",
                     "EXPIRE key seconds - Set timeout on a key",
+                    "PEXPIRE key milliseconds - Set timeout on a key in milliseconds",
                     "PERSIST key - Remove timeout from a key",
                     "TTL key - Get remaining time to live",
+                    "PTTL key - Get remaining time to live in milliseconds",
                     "INCR key - Increment integer value by 1",
                     "INCRBY key increment - Increment integer value by step",
                     "DECR key - Decrement integer value by 1",
