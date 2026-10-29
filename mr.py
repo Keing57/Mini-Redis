@@ -869,6 +869,23 @@ class StorageEngine:
                 score = zset[member]
                 score_str = str(int(score)) if score.is_integer() else str(score)
                 return f"\"{score_str}\""
+            elif cmd == "COMMAND":
+                commands = [
+                    "PING", "ECHO", "DBSIZE", "SET", "SETNX", "SETEX", "GETSET",
+                    "MSET", "MGET", "APPEND", "STRLEN", "GET", "DEL", "EXISTS",
+                    "KEYS", "SCAN", "EXPIRE", "PEXPIRE", "PERSIST", "TTL", "PTTL",
+                    "INCR", "INCRBY", "DECR", "DECRBY", "LPUSH", "RPUSH", "LRANGE",
+                    "LTRIM", "LINDEX", "LSET", "LPOP", "RPOP", "LLEN", "HSET",
+                    "HGET", "HEXISTS", "HLEN", "HKEYS", "HVALS", "HDEL", "HGETALL",
+                    "SADD", "SMEMBERS", "SREM", "SISMEMBER", "SCARD", "SINTER",
+                    "SUNION", "SDIFF", "ZADD", "ZRANGE", "ZCARD", "ZREM", "ZSCORE",
+                    "TYPE", "RENAME", "MEMORY", "INFO", "SAVE", "BGSAVE", "FLUSHALL",
+                    "MULTI", "EXEC", "DISCARD", "COMMAND", "HELP", "QUIT"
+                ]
+                res = []
+                for idx, c in enumerate(commands, 1):
+                    res.append(f"{idx}) \"{c}\"")
+                return "\n".join(res)
             elif cmd == "TYPE":
                 if len(parts) < 2:
                     return "ERR syntax error: TYPE key"
@@ -1005,6 +1022,7 @@ class StorageEngine:
                     "MULTI - Mark the start of a transaction block",
                     "EXEC - Execute all commands issued after MULTI",
                     "DISCARD - Discard all commands issued after MULTI",
+                    "COMMAND - List all supported commands",
                     "HELP - Show manual",
                     "QUIT - Close client connection"
                 ]
